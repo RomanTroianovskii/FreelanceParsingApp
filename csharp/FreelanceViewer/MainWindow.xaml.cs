@@ -19,7 +19,7 @@ namespace FreelanceViewer
         private object OffersGrid = null!; // typed as object to avoid compile-time dependency on DataGrid type
 
         private ObservableCollection<OfferViewModel> _offers = new();
-        private string _dbPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "python", "data", "offers.db");
+        private string _dbPath;
 
         public MainWindow()
         {
@@ -36,11 +36,15 @@ namespace FreelanceViewer
             SetGridItems(_offers);
 
             FetchButton.Click += async (s, e) => await FetchButton_Click(s, e);
-            RefreshButton.Click += RefreshButton_Click;
+            RefreshButton.Click += async (s, e) => await RefreshButton_Click(s, e);
             OpenUrlButton.Click += OpenUrlButton_Click;
             SearchBox.KeyUp += (s, e) => ApplyFilter();
 
-            LoadOffers();
+            _dbPath = FindDbPath();
+            _ = LoadOffersAsync();
+
+            // debug
+            System.Diagnostics.Debug.WriteLine($"Using DB path: {_dbPath}");
         }
 
         private void SetGridItems(object items)
@@ -54,7 +58,7 @@ namespace FreelanceViewer
             Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this);
         }
 
-        private void RefreshButton_Click(object? sender, RoutedEventArgs e) => LoadOffers();
+        private async Task RefreshButton_Click(object? sender, RoutedEventArgs e) => await LoadOffersAsync();
 
         private void OpenUrlButton_Click(object? sender, RoutedEventArgs e)
         {
@@ -78,7 +82,8 @@ namespace FreelanceViewer
 
         private string FindPythonDir()
         {
-            var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+            var assemblyDir = Path.GetDirectoryName(typeof(MainWindow).Assembly.Location) ?? Directory.GetCurrentDirectory();
+            var dir = new DirectoryInfo(assemblyDir);
             while (dir != null)
             {
                 var candidate = Path.Combine(dir.FullName, "python");
@@ -86,13 +91,28 @@ namespace FreelanceViewer
                     return candidate;
                 dir = dir.Parent;
             }
-            // fallback
+            // fallback to current directory search
+            dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+            while (dir != null)
+            {
+                var candidate = Path.Combine(dir.FullName, "python");
+                if (Directory.Exists(candidate) && Directory.Exists(Path.Combine(candidate, "freelance_parser")))
+                    return candidate;
+                dir = dir.Parent;
+            }
+            // final fallback
             return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "python"));
         }
 
         private async Task<bool> RunParserAsync(string site, int pages)
         {
             var pythonDir = FindPythonDir();
+            if (string.IsNullOrEmpty(pythonDir) || !Directory.Exists(pythonDir))
+            {
+                await ShowMessageAsync("Python не найден", "Не удалось найти папку с Python-проектом. Убедитесь, что в репозитории есть папка 'python' с модулем 'freelance_parser'.");
+                return false;
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = "python",
@@ -139,6 +159,30 @@ namespace FreelanceViewer
             await win.ShowDialog(this);
         }
 
+        private string FindDbPath()
+        {
+            var assemblyDir = Path.GetDirectoryName(typeof(MainWindow).Assembly.Location) ?? Directory.GetCurrentDirectory();
+            var dir = new DirectoryInfo(assemblyDir);
+            while (dir != null)
+            {
+                var candidate = Path.Combine(dir.FullName, "python", "data", "offers.db");
+                if (File.Exists(candidate))
+                    return candidate;
+                dir = dir.Parent;
+            }
+
+            dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+            while (dir != null)
+            {
+                var candidate = Path.Combine(dir.FullName, "python", "data", "offers.db");
+                if (File.Exists(candidate))
+                    return candidate;
+                dir = dir.Parent;
+            }
+
+            return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "python", "data", "offers.db"));
+        }
+
         private async Task FetchButton_Click(object? sender, RoutedEventArgs e)
         {
             FetchButton.IsEnabled = false;
@@ -147,7 +191,7 @@ namespace FreelanceViewer
             {
                 var ok1 = await RunParserAsync("flru", 5);
                 var ok2 = await RunParserAsync("kwork", 5);
-                LoadOffers();
+                await LoadOffersAsync();
                 await ShowMessageAsync("Парсинг завершён", $"FL.ru: {(ok1 ? "OK" : "Failed")}\nKwork: {(ok2 ? "OK" : "Failed")}");
             }
             finally
@@ -156,10 +200,14 @@ namespace FreelanceViewer
                 RefreshButton.IsEnabled = true;
             }
         }
-        private void LoadOffers()
+        private async Task LoadOffersAsync()
         {
             _offers.Clear();
-            if (!File.Exists(_dbPath)) return;
+            if (string.IsNullOrEmpty(_dbPath) || !File.Exists(_dbPath))
+            {
+                await ShowMessageAsync("БД не найдена", $"Файл базы данных не найден:\n{_dbPath}\nЗапустите парсер или проверьте путь.");
+                return;
+            }
 
             using var conn = new SqliteConnection($"Data Source={_dbPath}");
             conn.Open();
