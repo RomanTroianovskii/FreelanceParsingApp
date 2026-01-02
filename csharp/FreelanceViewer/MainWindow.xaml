@@ -9,7 +9,7 @@
       <Button x:Name="OpenUrlButton" Content="Open URL" Margin="6,0,0,0" />
     </StackPanel>
 
-    <DataGrid x:Name="OffersGrid" Items="{Binding}" AutoGenerateColumns="False">
+    <DataGrid x:Name="OffersGrid" ItemsSource="{Binding}" AutoGenerateColumns="False">
       <DataGrid.Columns>
         <DataGridTextColumn Header="Site" Binding="{Binding Site}" Width="100" />
         <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
