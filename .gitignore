@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+env.bak/
+*.egg-info/
+pip-wheel-metadata/
+.python-version
+.pytest_cache/
+
+# dotenv
+.env
+.env.*
+
+# VSCode
+.vscode/
+.history/
+
+# JetBrains
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# C# / .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+TestResults/
+*.nupkg
+
+# Avalonia / SkiaSharp build files
+*.log
+
+# Packages
+node_modules/
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml
+
+# Secrets
+secrets.json
+
+# Logs
+*.log
+
+# Ignore local IDE files
+*.swp
+*.swo
+
+# Keep data folder tracked (do not ignore python/data/offers.db) intentionally
+# If you prefer to ignore DB, uncomment the following line:
+# python/data/*.db

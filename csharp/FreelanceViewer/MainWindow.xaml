@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FreelanceViewer.MainWindow"
+        Title="Freelance Viewer" Width="1000" Height="600">
+  <DockPanel LastChildFill="True">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6">
+      <Button x:Name="RefreshButton" Content="Refresh" Margin="0,0,6,0" />
+      <TextBox x:Name="SearchBox" Width="300" Watermark="Поиск по заголовку..." />
+      <Button x:Name="OpenUrlButton" Content="Open URL" Margin="6,0,0,0" />
+    </StackPanel>
+
+    <DataGrid x:Name="OffersGrid" Items="{Binding}" AutoGenerateColumns="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Site" Binding="{Binding Site}" Width="100" />
+        <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
+        <DataGridTextColumn Header="Budget" Binding="{Binding Budget}" Width="100" />
+        <DataGridTextColumn Header="Posted" Binding="{Binding PostedAt}" Width="150" />
+        <DataGridTextColumn Header="URL" Binding="{Binding Url}" Width="250" />
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</Window>

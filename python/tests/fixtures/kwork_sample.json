@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "pagination": {"current_page": 1, "last_page": 1},
+    "wants": [
+      {
+        "id": 3062000,
+        "name": "Test Kwork Project",
+        "description": "Test description for kwork project.",
+        "possiblePriceLimit": 2000,
+        "date_create": "2026-01-02 12:00:00"
+      }
+    ]
+  }
+}
