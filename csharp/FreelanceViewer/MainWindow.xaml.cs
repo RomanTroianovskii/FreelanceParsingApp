@@ -5,12 +5,14 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace FreelanceViewer
 {
     public partial class MainWindow : Window
     {
         // controls (will be found after loading XAML)
+        private Avalonia.Controls.Button FetchButton = null!;
         private Avalonia.Controls.Button RefreshButton = null!;
         private Avalonia.Controls.Button OpenUrlButton = null!;
         private Avalonia.Controls.TextBox SearchBox = null!;
@@ -24,6 +26,7 @@ namespace FreelanceViewer
             InitializeComponent();
 
             // Bind controls
+            FetchButton = this.FindControl<Avalonia.Controls.Button>("FetchButton");
             RefreshButton = this.FindControl<Avalonia.Controls.Button>("RefreshButton");
             OpenUrlButton = this.FindControl<Avalonia.Controls.Button>("OpenUrlButton");
             SearchBox = this.FindControl<Avalonia.Controls.TextBox>("SearchBox");
@@ -32,6 +35,7 @@ namespace FreelanceViewer
             // Set Items via reflection to avoid DataGrid compile-time dependency
             SetGridItems(_offers);
 
+            FetchButton.Click += async (s, e) => await FetchButton_Click(s, e);
             RefreshButton.Click += RefreshButton_Click;
             OpenUrlButton.Click += OpenUrlButton_Click;
             SearchBox.KeyUp += (s, e) => ApplyFilter();
@@ -72,6 +76,86 @@ namespace FreelanceViewer
             SetGridItems(_offers.Where(x => x.IsVisible));
         }
 
+        private string FindPythonDir()
+        {
+            var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+            while (dir != null)
+            {
+                var candidate = Path.Combine(dir.FullName, "python");
+                if (Directory.Exists(candidate) && Directory.Exists(Path.Combine(candidate, "freelance_parser")))
+                    return candidate;
+                dir = dir.Parent;
+            }
+            // fallback
+            return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "python"));
+        }
+
+        private async Task<bool> RunParserAsync(string site, int pages)
+        {
+            var pythonDir = FindPythonDir();
+            var psi = new ProcessStartInfo
+            {
+                FileName = "python",
+                Arguments = $"-m freelance_parser.cli fetch --site {site} --pages {pages}",
+                WorkingDirectory = pythonDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            try
+            {
+                using var proc = Process.Start(psi);
+                if (proc == null) return false;
+                var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+                var stderrTask = proc.StandardError.ReadToEndAsync();
+                await Task.WhenAll(stdoutTask, stderrTask);
+                await proc.WaitForExitAsync();
+                var ok = proc.ExitCode == 0;
+                // simple logging
+                System.Diagnostics.Debug.WriteLine($"Parser {site} exit={proc.ExitCode}\n{stdoutTask.Result}\n{stderrTask.Result}");
+                return ok;
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Failed to start parser: " + ex);
+                return false;
+            }
+        }
+
+        private async Task ShowMessageAsync(string title, string message)
+        {
+            var win = new Window
+            {
+                Title = title,
+                Width = 480,
+                Height = 240,
+                Content = new ScrollViewer
+                {
+                    Content = new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap }
+                }
+            };
+            await win.ShowDialog(this);
+        }
+
+        private async Task FetchButton_Click(object? sender, RoutedEventArgs e)
+        {
+            FetchButton.IsEnabled = false;
+            RefreshButton.IsEnabled = false;
+            try
+            {
+                var ok1 = await RunParserAsync("flru", 5);
+                var ok2 = await RunParserAsync("kwork", 5);
+                LoadOffers();
+                await ShowMessageAsync("Парсинг завершён", $"FL.ru: {(ok1 ? "OK" : "Failed")}\nKwork: {(ok2 ? "OK" : "Failed")}");
+            }
+            finally
+            {
+                FetchButton.IsEnabled = true;
+                RefreshButton.IsEnabled = true;
+            }
+        }
         private void LoadOffers()
         {
             _offers.Clear();

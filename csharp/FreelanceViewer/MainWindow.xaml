@@ -4,6 +4,7 @@
         Title="Freelance Viewer" Width="1000" Height="600">
   <DockPanel LastChildFill="True">
     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6">
+      <Button x:Name="FetchButton" Content="Fetch" Margin="0,0,6,0" />
       <Button x:Name="RefreshButton" Content="Refresh" Margin="0,0,6,0" />
       <TextBox x:Name="SearchBox" Width="300" Watermark="Поиск по заголовку..." />
       <Button x:Name="OpenUrlButton" Content="Open URL" Margin="6,0,0,0" />
