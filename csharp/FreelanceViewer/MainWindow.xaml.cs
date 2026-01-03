@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Microsoft.Data.Sqlite;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -16,10 +17,11 @@ namespace FreelanceViewer
         private Avalonia.Controls.Button RefreshButton = null!;
         private Avalonia.Controls.Button OpenUrlButton = null!;
         private Avalonia.Controls.TextBox SearchBox = null!;
-        private object OffersGrid = null!; // typed as object to avoid compile-time dependency on DataGrid type
+        private Avalonia.Controls.DataGrid OffersGrid = null!;
 
-        private ObservableCollection<OfferViewModel> _offers = new();
-        private string _dbPath;
+        private List<OfferViewModel> _allOffers = new();
+        public ObservableCollection<OfferViewModel> FilteredOffers { get; } = new();
+        private string _dbPath = string.Empty;
 
         public MainWindow()
         {
@@ -30,10 +32,12 @@ namespace FreelanceViewer
             RefreshButton = this.FindControl<Avalonia.Controls.Button>("RefreshButton");
             OpenUrlButton = this.FindControl<Avalonia.Controls.Button>("OpenUrlButton");
             SearchBox = this.FindControl<Avalonia.Controls.TextBox>("SearchBox");
-            OffersGrid = this.FindControl<Control>("OffersGrid");
+            OffersGrid = this.FindControl<Avalonia.Controls.DataGrid>("OffersGrid");
 
-            // Set Items via reflection to avoid DataGrid compile-time dependency
-            SetGridItems(_offers);
+            // Set data context and bind collections
+            this.DataContext = this;
+            // Items are bound in XAML: Items="{Binding FilteredOffers}"
+            OffersGrid.DoubleTapped += OffersGrid_DoubleTapped;
 
             FetchButton.Click += async (s, e) => await FetchButton_Click(s, e);
             RefreshButton.Click += async (s, e) => await RefreshButton_Click(s, e);
@@ -45,12 +49,17 @@ namespace FreelanceViewer
 
             // debug
             System.Diagnostics.Debug.WriteLine($"Using DB path: {_dbPath}");
+            Console.WriteLine($"Using DB path: {_dbPath}");
         }
 
-        private void SetGridItems(object items)
+
+        private void OffersGrid_DoubleTapped(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            var prop = OffersGrid?.GetType().GetProperty("Items");
-            prop?.SetValue(OffersGrid, items);
+            var sel = OffersGrid?.SelectedItem as OfferViewModel;
+            if (sel != null && !string.IsNullOrEmpty(sel.Url))
+            {
+                try { Process.Start(new ProcessStartInfo(sel.Url) { UseShellExecute = true }); } catch { }
+            }
         }
 
         private void InitializeComponent()
@@ -62,9 +71,8 @@ namespace FreelanceViewer
 
         private void OpenUrlButton_Click(object? sender, RoutedEventArgs e)
         {
-            // Get SelectedItem via reflection
-            var selObj = OffersGrid?.GetType().GetProperty("SelectedItem")?.GetValue(OffersGrid);
-            if (selObj is OfferViewModel sel && !string.IsNullOrEmpty(sel.Url))
+            var sel = OffersGrid?.SelectedItem as OfferViewModel;
+            if (sel != null && !string.IsNullOrEmpty(sel.Url))
             {
                 try { Process.Start(new ProcessStartInfo(sel.Url) { UseShellExecute = true }); } catch { }
             }
@@ -73,15 +81,21 @@ namespace FreelanceViewer
         private void ApplyFilter()
         {
             var q = SearchBox.Text?.ToLowerInvariant() ?? string.Empty;
-            foreach (var item in _offers)
+            FilteredOffers.Clear();
+            foreach (var item in _allOffers)
             {
-                item.IsVisible = string.IsNullOrEmpty(q) || (item.Title?.ToLowerInvariant().Contains(q) ?? false);
+                if (string.IsNullOrEmpty(q) || (item.Title?.ToLowerInvariant().Contains(q) ?? false))
+                    FilteredOffers.Add(item);
             }
-            SetGridItems(_offers.Where(x => x.IsVisible));
         }
 
         private string FindPythonDir()
         {
+            // Respect explicit override if present (useful for Windows testing)
+            var overrideDir = System.Environment.GetEnvironmentVariable("FREELANCE_PYTHON_DIR");
+            if (!string.IsNullOrEmpty(overrideDir) && Directory.Exists(overrideDir))
+                return overrideDir;
+
             var assemblyDir = Path.GetDirectoryName(typeof(MainWindow).Assembly.Location) ?? Directory.GetCurrentDirectory();
             var dir = new DirectoryInfo(assemblyDir);
             while (dir != null)
@@ -100,7 +114,7 @@ namespace FreelanceViewer
                     return candidate;
                 dir = dir.Parent;
             }
-            // final fallback
+            // final fallback guess
             return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "python"));
         }
 
@@ -161,6 +175,14 @@ namespace FreelanceViewer
 
         private string FindDbPath()
         {
+            // Allow explicit override for testing (FREELANCE_DB_PATH)
+            var overridePath = System.Environment.GetEnvironmentVariable("FREELANCE_DB_PATH");
+            if (!string.IsNullOrEmpty(overridePath) && File.Exists(overridePath))
+            {
+                Console.WriteLine($"Using DB override: {overridePath}");
+                return overridePath;
+            }
+
             var assemblyDir = Path.GetDirectoryName(typeof(MainWindow).Assembly.Location) ?? Directory.GetCurrentDirectory();
             var dir = new DirectoryInfo(assemblyDir);
             while (dir != null)
@@ -180,7 +202,9 @@ namespace FreelanceViewer
                 dir = dir.Parent;
             }
 
-            return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "python", "data", "offers.db"));
+            var fallback = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "python", "data", "offers.db"));
+            Console.WriteLine($"DB not found by search; using fallback path: {fallback}");
+            return fallback;
         }
 
         private async Task FetchButton_Click(object? sender, RoutedEventArgs e)
@@ -202,32 +226,38 @@ namespace FreelanceViewer
         }
         private async Task LoadOffersAsync()
         {
-            _offers.Clear();
+            _allOffers.Clear();
+            FilteredOffers.Clear();
             if (string.IsNullOrEmpty(_dbPath) || !File.Exists(_dbPath))
             {
+                Console.WriteLine($"Файл базы данных не найден:\n{_dbPath}");
                 await ShowMessageAsync("БД не найдена", $"Файл базы данных не найден:\n{_dbPath}\nЗапустите парсер или проверьте путь.");
                 return;
             }
 
+            Console.WriteLine($"Reading DB: {_dbPath}");
             using var conn = new SqliteConnection($"Data Source={_dbPath}");
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT site, title, url, budget, posted_at FROM offers ORDER BY scraped_at DESC LIMIT 1000";
             using var rdr = cmd.ExecuteReader();
+            int i = 0;
             while (rdr.Read())
             {
-                _offers.Add(new OfferViewModel
+                var item = new OfferViewModel
                 {
                     Site = rdr.GetString(0),
                     Title = rdr.IsDBNull(1) ? string.Empty : rdr.GetString(1),
                     Url = rdr.IsDBNull(2) ? string.Empty : rdr.GetString(2),
                     Budget = rdr.IsDBNull(3) ? string.Empty : rdr.GetString(3),
-                    PostedAt = rdr.IsDBNull(4) ? string.Empty : rdr.GetString(4),
-                    IsVisible = true
-                });
+                    PostedAt = rdr.IsDBNull(4) ? string.Empty : rdr.GetString(4)
+                };
+                _allOffers.Add(item);
+                Console.WriteLine($"    Site: {item.Site}\n   Title: {item.Title} \n   Url: {item.Url}\n   Budget: {item.Budget}\n    PostedAt: {item.PostedAt}\n");
+                i++;
             }
 
-            SetGridItems(_offers);
+            ApplyFilter();
         }
     }
 
@@ -238,6 +268,5 @@ namespace FreelanceViewer
         public string Url { get; set; } = string.Empty;
         public string Budget { get; set; } = string.Empty;
         public string PostedAt { get; set; } = string.Empty;
-        public bool IsVisible { get; set; } = true;
     }
 }
